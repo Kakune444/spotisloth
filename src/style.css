@@ -887,16 +887,87 @@ input[type="range"]:disabled {
   cursor: pointer;
   font-weight: 700;
 }
-.profile button {
+.profile-menu {
   position: absolute;
   right: 0;
   top: 42px;
   min-width: 160px;
   background: #282828;
   border-radius: 5px;
-  padding: 15px;
+  padding: 4px;
   text-align: left;
   box-shadow: 0 8px 30px #000a;
+}
+.profile-menu button {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  border-radius: 3px;
+  text-align: left;
+  white-space: nowrap;
+}
+.profile-menu button:hover,
+.profile-menu button:focus-visible {
+  background: #3e3e3e;
+}
+.audio-settings {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px 24px 56px;
+}
+.audio-settings h1 {
+  font-size: 32px;
+  margin-bottom: 40px;
+}
+.audio-settings h2 {
+  font-size: 22px;
+  margin: 32px 0 20px;
+}
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 24px 0;
+}
+.setting-row > div {
+  flex: 1;
+}
+.setting-row p,
+.setting-notice {
+  color: #b3b3b3;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 8px 0 0;
+}
+.setting-row select {
+  max-width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #727272;
+  border-radius: 4px;
+  background: #282828;
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+}
+.setting-row select:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.quality-unavailable {
+  color: #b3b3b3;
+  white-space: nowrap;
+  font-size: 14px;
+}
+.is-lossless {
+  color: #1ed760;
+}
+@media (max-width: 1100px) {
+  .setting-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
 }
 .loading,
 .empty {

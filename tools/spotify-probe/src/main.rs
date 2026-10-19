@@ -5,13 +5,15 @@ use librespot_core::{
 use librespot_metadata::{Metadata, Track};
 use librespot_playback::{
     audio_backend,
-    config::{AudioFormat, PlayerConfig},
+    config::AudioFormat,
     mixer::NoOpVolume,
     player::{Player, PlayerEvent},
 };
 use protobuf::Message;
 use serde::Deserialize;
 use std::{path::PathBuf, time::Duration};
+#[path = "../../../src-tauri/src/audio.rs"]
+mod audio;
 #[path = "../../../src-tauri/src/connect.rs"]
 mod connect;
 #[path = "../../../src-tauri/src/library_api.rs"]
@@ -84,7 +86,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let backend = audio_backend::find(Some("rodio".to_owned())).ok_or("No audio backend")?;
     let player = Player::new(
-        PlayerConfig::default(),
+        audio::AudioQuality::default().player_config(),
         session.clone(),
         Box::new(NoOpVolume),
         move || backend(None, AudioFormat::default()),
@@ -122,7 +124,7 @@ async fn diagnose_connect(
     let mixer = SoftMixer::open(MixerConfig::default())?;
     let backend = audio_backend::find(Some("rodio".to_owned())).ok_or("No audio backend")?;
     let player = Player::new(
-        PlayerConfig::default(),
+        audio::AudioQuality::default().player_config(),
         session.clone(),
         mixer.get_soft_volume(),
         move || backend(None, AudioFormat::default()),
@@ -163,6 +165,10 @@ async fn diagnose_connect(
     })
     .await;
     let view = runtime.view().await;
+    println!(
+        "CONNECT_QUALITY: {}",
+        view.quality.as_deref().unwrap_or("unknown")
+    );
     println!("CONNECT_QUEUE_SHAPE: {}", runtime.queue_diagnostics().await);
     if result.is_err() {
         println!(

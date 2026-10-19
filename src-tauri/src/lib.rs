@@ -6,7 +6,7 @@ use librespot_metadata::{Album, Metadata, Track};
 use librespot_oauth::OAuthClientBuilder;
 use librespot_playback::{
     audio_backend,
-    config::{AudioFormat, PlayerConfig},
+    config::AudioFormat,
     mixer::{Mixer, MixerConfig, softmixer::SoftMixer},
     player::Player,
 };
@@ -20,8 +20,10 @@ use std::{
 };
 use tauri::{Emitter, Manager, State};
 use tokio::sync::{Mutex, Semaphore};
+mod audio;
 mod connect;
 mod library_api;
+use audio::{AudioPreferences, AudioQuality};
 use connect::{ConnectAction, ConnectError, ConnectRuntime, ConnectView};
 use library_api::{LibraryApi, LibraryError};
 use library_api::{PlaylistEdit, playlist_permissions, revision_hex};
@@ -128,6 +130,7 @@ struct Native {
     session: Session,
     player: Arc<Player>,
     connect: Arc<ConnectRuntime>,
+    quality: AudioQuality,
 }
 struct Backend {
     client: reqwest::Client,
@@ -466,14 +469,14 @@ async fn connect_spotify(
         return Err(error("AUTH_REQUIRED", "Connectez-vous à Spotify."));
     };
     let session = Session::new(config, None);
+    let quality = AudioPreferences::read(&audio_preferences_path(&app)?)
+        .map_err(|_| error("STORAGE", "Impossible de lire les préférences audio."))?
+        .quality;
     let mixer = SoftMixer::open(MixerConfig::default()).map_err(network_error)?;
     let backend = audio_backend::find(Some("rodio".to_owned()))
         .ok_or_else(|| error("AUDIO", "Aucune sortie audio n'est disponible."))?;
     let player = Player::new(
-        PlayerConfig {
-            position_update_interval: Some(Duration::from_secs(1)),
-            ..PlayerConfig::default()
-        },
+        quality.player_config(),
         session.clone(),
         mixer.get_soft_volume(),
         move || backend(None, AudioFormat::default()),
@@ -510,6 +513,7 @@ async fn connect_spotify(
         session: session.clone(),
         player,
         connect: runtime,
+        quality,
     });
     let shared = state.inner().clone();
     tauri::async_runtime::spawn(async move {
@@ -1009,6 +1013,56 @@ async fn get_track_details(
     state.track_views(&session, uris).await
 }
 
+fn audio_preferences_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf> {
+    app.path()
+        .app_local_data_dir()
+        .map(|p| p.join("audio-preferences.json"))
+        .map_err(|_| error("STORAGE", "Les préférences audio sont indisponibles."))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AudioSettings {
+    quality: AudioQuality,
+    active_quality: Option<AudioQuality>,
+    restart_required: bool,
+}
+
+async fn audio_settings(state: &Backend, preferences: AudioPreferences) -> AudioSettings {
+    let native = state.native.lock().await;
+    let active_quality = native.as_ref().map(|n| n.quality);
+    AudioSettings {
+        quality: preferences.quality,
+        active_quality,
+        restart_required: active_quality.is_some_and(|q| q != preferences.quality),
+    }
+}
+
+#[tauri::command]
+async fn get_audio_settings(
+    app: tauri::AppHandle,
+    state: State<'_, Arc<Backend>>,
+) -> Result<AudioSettings> {
+    let _connection = state.connection.lock().await;
+    let preferences = AudioPreferences::read(&audio_preferences_path(&app)?)
+        .map_err(|_| error("STORAGE", "Impossible de lire les préférences audio."))?;
+    Ok(audio_settings(&state, preferences).await)
+}
+
+#[tauri::command]
+async fn set_audio_quality(
+    app: tauri::AppHandle,
+    state: State<'_, Arc<Backend>>,
+    quality: AudioQuality,
+) -> Result<AudioSettings> {
+    let _connection = state.connection.lock().await;
+    let preferences = AudioPreferences { quality };
+    preferences
+        .write(&audio_preferences_path(&app)?)
+        .map_err(|_| error("STORAGE", "Impossible d’enregistrer la qualité audio."))?;
+    Ok(audio_settings(&state, preferences).await)
+}
+
 #[tauri::command]
 async fn get_connect_state(state: State<'_, Arc<Backend>>) -> Result<ConnectView> {
     let native = state.native.lock().await;
@@ -1042,6 +1096,8 @@ pub fn run() {
         .manage(Arc::new(Backend::new()))
         .invoke_handler(tauri::generate_handler![
             get_status,
+            get_audio_settings,
+            set_audio_quality,
             connect_spotify,
             disconnect_spotify,
             get_home,

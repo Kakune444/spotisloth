@@ -24,6 +24,7 @@ import {
 } from "./lib/connect.ts";
 import { DevicePicker } from "./ui/devices.ts";
 import { QueueView } from "./ui/queue.ts";
+import { AudioSettingsView } from "./ui/settings.ts";
 
 type Status = {
   connected: boolean;
@@ -232,6 +233,7 @@ const devicePicker = new DevicePicker(
     void sendConnect({ kind: "transfer", deviceId: id });
   },
 );
+const audioSettings = new AudioSettingsView(connectState, showError);
 byId("connect-banner").addEventListener("click", () =>
   byId("show-devices").click(),
 );
@@ -263,7 +265,7 @@ function cover(card: Pick<Card, "image" | "name" | "kind">, cls = ""): string {
 
 function renderAccount(): void {
   byId("account").innerHTML = status.connected
-    ? `<details class="profile"><summary title="Compte">${esc((status.username || "F")[0].toUpperCase())}</summary><button id="disconnect">Se déconnecter</button></details>`
+    ? `<details class="profile"><summary title="Compte">${esc((status.username || "S")[0].toUpperCase())}</summary><div class="profile-menu"><button id="show-settings">Préférences</button><button id="disconnect">Se déconnecter</button></div></details>`
     : '<button class="pill white" id="connect">Se connecter</button>';
   byId<HTMLButtonElement>("create-playlist").disabled =
     !status.nativeReady || playlistPending;
@@ -743,6 +745,7 @@ function togglePlayback(): void {
 function applyConnect(next: ConnectState): void {
   const previous = connectState;
   connectState = next;
+  audioSettings.update(next);
   const cached = next.track ? connectMetadata.get(next.track.uri) : undefined;
   const track = next.track ? { ...next.track, ...(cached ?? {}) } : null;
   const changed =
@@ -973,6 +976,15 @@ document.addEventListener("click", async (event) => {
   if (!button) return;
   if (button instanceof HTMLButtonElement && button.disabled) return;
   const id = button.id;
+  if (id === "show-settings") {
+    ++requestId;
+    clearTimeout(searchTimer);
+    byId<HTMLInputElement>("search").value = "";
+    document.querySelector("details.profile")?.removeAttribute("open");
+    activeView = "settings";
+    void audioSettings.open(byId("main-content"));
+    return;
+  }
   if (button.dataset.menu) {
     openTrackMenu(button);
     return;
@@ -1005,6 +1017,7 @@ document.addEventListener("click", async (event) => {
   if (id === "disconnect") {
     ++connectEpoch;
     connectState = emptyConnectState();
+    audioSettings.update(connectState);
     connectMetadata.clear();
     metadataPending.clear();
     connectQueueKeys.clear();

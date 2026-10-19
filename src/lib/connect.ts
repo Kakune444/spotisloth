@@ -1,4 +1,5 @@
 import type { RepeatMode } from "./queue.ts";
+import type { ReportedQuality } from "./audio.ts";
 export type ConnectTrack = {
   uri: string;
   name: string;
@@ -25,6 +26,7 @@ export type ConnectState = {
   track: ConnectTrack | null;
   playing: boolean;
   loading: boolean;
+  quality: ReportedQuality | null;
   positionMs: number;
   shuffle: boolean;
   repeat: RepeatMode;
@@ -71,6 +73,7 @@ export function emptyConnectState(): ConnectState {
     track: null,
     playing: false,
     loading: false,
+    quality: null,
     positionMs: 0,
     shuffle: false,
     repeat: "off",

@@ -91,6 +91,7 @@ pub struct ConnectView {
     pub track: Option<ConnectTrack>,
     pub playing: bool,
     pub loading: bool,
+    pub quality: Option<String>,
     pub position_ms: u32,
     pub shuffle: bool,
     pub repeat: String,
@@ -343,6 +344,23 @@ impl ConnectModel {
         // Connect encodes ordinary pauses with all three status flags set.
         // Paused takes precedence so that the resume control stays available.
         view.loading = p.is_buffering && !p.is_paused;
+        // A target bitrate or capability is not proof of the current quality.
+        // Local reports can still belong to the previous receiver during handoff.
+        if c.active_device_id != self.local && view.track.is_some() && !view.loading && p.is_playing
+        {
+            view.quality = p.playback_quality.as_ref().and_then(|q| {
+                match q.bitrate_level.value() {
+                    1 => Some("low"),
+                    2 => Some("normal"),
+                    3 => Some("high"),
+                    4 => Some("veryHigh"),
+                    5 if q.hifi_status.value() == 2 => Some("lossless"),
+                    6 if q.hifi_status.value() == 2 => Some("lossless24"),
+                    _ => None,
+                }
+                .map(str::to_owned)
+            });
+        }
         let elapsed = if view.playing {
             now_ms().saturating_sub(p.timestamp).max(0)
         } else {
@@ -1187,6 +1205,48 @@ mod tests {
         old.active_device_id = "old".into();
         assert!(!m.apply(old));
         assert_eq!(m.view().active_device_id, "phone");
+    }
+    #[test]
+    fn quality_uses_the_current_remote_report_and_never_the_requested_target() {
+        use librespot_protocol::player::{BitrateLevel, HiFiStatus, PlaybackQuality};
+        let mut m = ConnectModel::new("local".into());
+        let mut c = cluster(1);
+        let p = c.player_state.as_mut().unwrap();
+        p.is_playing = true;
+        p.track = MessageField::some(p.next_tracks[0].clone());
+        p.playback_quality = MessageField::some(PlaybackQuality {
+            target_bitrate_level: protobuf::EnumOrUnknown::new(BitrateLevel::hifi24),
+            bitrate_level: protobuf::EnumOrUnknown::new(BitrateLevel::high),
+            ..Default::default()
+        });
+        m.apply(c.clone());
+        assert_eq!(m.view().quality.as_deref(), Some("high"));
+        let q = c
+            .player_state
+            .as_mut()
+            .unwrap()
+            .playback_quality
+            .as_mut()
+            .unwrap();
+        q.bitrate_level = protobuf::EnumOrUnknown::new(BitrateLevel::hifi24);
+        m.apply(c.clone());
+        assert!(m.view().quality.is_none());
+        c.player_state
+            .as_mut()
+            .unwrap()
+            .playback_quality
+            .as_mut()
+            .unwrap()
+            .hifi_status = protobuf::EnumOrUnknown::new(HiFiStatus::on);
+        m.apply(c.clone());
+        assert_eq!(m.view().quality.as_deref(), Some("lossless24"));
+        c.player_state.as_mut().unwrap().is_buffering = true;
+        m.apply(c.clone());
+        assert!(m.view().quality.is_none());
+        c.player_state.as_mut().unwrap().is_buffering = false;
+        c.active_device_id = "local".into();
+        m.apply(c);
+        assert!(m.view().quality.is_none());
     }
     #[test]
     fn queue_occurrences_are_distinct_and_stale_edits_are_refused() {
