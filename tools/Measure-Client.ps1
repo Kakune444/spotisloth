@@ -39,7 +39,7 @@ do{
         if($included.Contains([int]$counter.IDProcess)){$resident[[int]$counter.IDProcess]=[long]$counter.WorkingSetPrivate}
     }
     $now=[DateTimeOffset]::UtcNow
-    $privateBytes=0L;$workingSet=0L;$privateWorkingSet=0L;$cpuDelta=0.0
+    $privateBytes=0L;$workingSet=0L;$privateWorkingSet=0L;$cpuDelta=0.0;$observedCpu=0.0
     $currentCpu=@{};$count=0;$residentCount=0
     foreach($processId in $included){
         $process=Get-Process -Id $processId -ErrorAction SilentlyContinue
@@ -50,7 +50,8 @@ do{
             $cpu=$process.TotalProcessorTime.TotalSeconds
             $privateBytes+=$process.PrivateMemorySize64;$workingSet+=$process.WorkingSet64;$count++
             if($resident.ContainsKey($processId)){$privateWorkingSet+=$resident[$processId];$residentCount++}
-            if($previousCpu.ContainsKey($identity)){$cpuDelta+=[math]::Max(0,$cpu-$previousCpu[$identity])}
+            $observedCpu+=$cpu
+            if($previousCpu.ContainsKey($identity)){$cpuDelta+=[math]::Max(0.0,[double]($cpu-$previousCpu[$identity]))}
             elseif($null -ne $previousAt -and $started -ge $previousAt.UtcDateTime){$cpuDelta+=$cpu}
             $currentCpu[$identity]=$cpu
         }catch{continue}
@@ -63,7 +64,7 @@ do{
         privateBytesMiB=[math]::Round($privateBytes/1MB,3)
         privateWorkingSetMiB=if($residentCount -eq $count){[math]::Round($privateWorkingSet/1MB,3)}else{$null}
         workingSetMiB=[math]::Round($workingSet/1MB,3)
-        cpuSeconds=[math]::Round($cpuDelta,6);intervalSeconds=[math]::Round($elapsed,6)
+        cpuSeconds=[math]::Round($cpuDelta,6);observedCpuTotalSeconds=[math]::Round($observedCpu,6);intervalSeconds=[math]::Round($elapsed,6)
         cpuPercent=if($elapsed -le 0){$null}else{[math]::Round(100*$cpuDelta/$elapsed/$logicalProcessors,4)}
     })
     $previousCpu=$currentCpu;$previousAt=$now;$nextSampleMs+=$IntervalMs
@@ -71,7 +72,7 @@ do{
 $cpuValues=@($samples | Where-Object {$null -ne $_.cpuPercent} | ForEach-Object {$_.cpuPercent} | Sort-Object)
 $residentValues=@($samples | Where-Object {$null -ne $_.privateWorkingSetMiB} | ForEach-Object {$_.privateWorkingSetMiB})
 $result=[pscustomobject]@{
-    schemaVersion=2;client=$Client;scenario=$Scenario;sampleCount=$samples.Count
+    schemaVersion=3;client=$Client;scenario=$Scenario;sampleCount=$samples.Count
     durationSeconds=[math]::Round($elapsedTotal,3);logicalProcessors=$logicalProcessors
     includesDescendants=$true;cpuDenominator='total machine capacity'
     medianPrivateWorkingSetMiB=Get-Median $residentValues
