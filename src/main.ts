@@ -921,7 +921,10 @@ function updateControls(): void {
     (playback.playing
       ? connectState.restrictions.pause
       : connectState.restrictions.resume);
-  toggle.innerHTML = icon(playback.playing ? "pause" : "play");
+  if (toggle.dataset.playing !== String(playback.playing)) {
+    toggle.dataset.playing = String(playback.playing);
+    toggle.innerHTML = icon(playback.playing ? "pause" : "play");
+  }
   toggle.classList.toggle("is-loading", queuePreparing || playback.loading);
   toggle.setAttribute("aria-label", playback.playing ? "Pause" : "Lire");
   byId<HTMLInputElement>("seek").disabled =
@@ -986,6 +989,7 @@ function renderPlayback(): void {
       icon("music") +
       "<p>Choisissez un titre<br/>pour commencer à écouter.</p></div>";
   byId("duration").textContent = formatTime(track?.durationMs || 0);
+  updatePosition();
   updateControls();
   updateSavedButtons();
   if (track) void refreshSaved([track.uri]);
@@ -1014,8 +1018,10 @@ async function connect(interactive: boolean): Promise<void> {
       if (!connectState.available) applyConnect(initial);
     }
     updateControls();
-    await loadHome();
-    if (status.nativeReady) void loadLibrary();
+    await Promise.all([
+      loadHome(),
+      status.nativeReady ? loadLibrary() : Promise.resolve(),
+    ]);
   } catch (err) {
     if (interactive || (err as AppError).code !== "AUTH_REQUIRED")
       showError(err);
@@ -1374,17 +1380,24 @@ function updatePosition(): void {
     playback.positionMs +
       (playback.playing ? performance.now() - lastPlaybackUpdate : 0),
   );
-  byId("position").textContent = formatTime(position);
+  const positionLabel = byId("position");
+  const formatted = formatTime(position);
+  if (positionLabel.textContent !== formatted)
+    positionLabel.textContent = formatted;
   const seek = byId<HTMLInputElement>("seek");
-  if (document.activeElement !== seek)
-    seek.value = String(
+  if (document.activeElement !== seek) {
+    const value = String(
       playback.track?.durationMs
         ? (position / playback.track.durationMs) * 100
         : 0,
     );
+    if (seek.value !== value) seek.value = value;
+  }
 }
 setInterval(() => {
-  if (!document.hidden) updatePosition();
+  // Server events still update seeks and paused tracks; only playing progress
+  // needs extrapolation between those events.
+  if (!document.hidden && playback.playing) updatePosition();
 }, 500);
 
 async function boot(): Promise<void> {
