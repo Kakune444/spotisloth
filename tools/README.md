@@ -28,6 +28,12 @@ Le mode historique accepte aussi un fichier JSON local avec `accessToken` et un
 puis arrête le lecteur. Un jeton capturé peut expirer ; ce mode n'établit pas la
 validité de la connexion normale. Ne jamais publier ce fichier.
 
+Le mode `--stored --profiles` lit le profil public du compte et jusqu’à huit
+propriétaires distincts de la première page de bibliothèque. Il vérifie aussi la
+relecture depuis le cache. Sa sortie contient uniquement des booléens et compteurs
+(`PROFILES_OK`), sans nom, URL de photo, identifiant ou autre information de compte.
+Ce mode ne modifie ni les playlists ni la lecture.
+
 ## Spotify Connect
 
 La sonde partage les réglages de construction du lecteur : 320 kbit/s demandés

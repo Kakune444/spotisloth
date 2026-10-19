@@ -39,8 +39,8 @@ L'expiration est gérée par librespot pour les sessions natives. Le mode de dia
 par fichier dépend d'un jeton temporaire. La recherche est temporisée à 350 ms et
 ignore les réponses devenues obsolètes ; l'annulation réseau complète est à ajouter.
 
-La bibliothèque affiche actuellement les playlists avec le nom technique de leur propriétaire ; les dossiers, albums et artistes
-suivis ne sont pas encore intégrés. La lecture de collection charge 40 titres par
+Les dossiers, albums et artistes suivis ne sont pas encore intégrés à la
+bibliothèque. La lecture de collection charge 40 titres par
 page. Le nouveau lecteur laisse librespot résoudre et paginer le contexte Spotify ;
 la file affichée suit les prochains titres publiés par l’appareil actif.
 Le renouvellement après expiration réelle et la récupération d'une session révoquée
@@ -72,6 +72,22 @@ fenêtres de création et de modification ont été ouvertes ; le menu d’un ti
 ouvre un sélecteur ne contenant que des playlists modifiables. Sa recherche a
 été testée. Les mutations complètes sont vérifiées par la sonde qui partage le
 même service Rust ; tous les clics d’écriture n’ont pas été rejoués dans l’interface.
+
+## Profils et noms des propriétaires
+
+Les identifiants de compte et de propriétaire servent aux requêtes et aux droits ;
+ils ne sont plus utilisés comme noms affichés. Le profil public fournit le nom et
+la photo du compte. La bibliothèque charge les noms des propriétaires après ses
+playlists, sans attendre ces profils pour afficher les titres ou activer la lecture.
+Si le profil est indisponible, l’avatar reste neutre et le sous-titre reste « Playlist ».
+
+Les requêtes passent par le service de profils de librespot, avec les listes de
+playlists et d’artistes du profil désactivées. Trois requêtes au maximum sont actives.
+Un cache de 256 entrées au maximum, partagé par le compte et la bibliothèque,
+regroupe les lectures simultanées du même propriétaire. Les réponses positives sont
+conservées dix minutes, les absences une minute. La déconnexion vide ce cache et
+invalide les réponses tardives dans l’interface. Seuls le nom public et l’URL HTTPS
+de la photo sont conservés dans le modèle de profil.
 
 ## Qualité audio et lossless
 
@@ -149,11 +165,16 @@ ne garantit pas le même tirage aléatoire au-delà de ce tampon.
 
 ## Version vérifiée
 
-Code compilé : `7bf8ea4`.
-[Compilation Windows et tests](https://github.com/Kakune444/spotisloth/actions/runs/39207350798)
-réussis : 24 tests TypeScript et 25 tests Rust. Les vérifications utilisent le
+Code compilé : `33bafd3`.
+[Compilation Windows et tests](https://github.com/Kakune444/spotisloth/actions/runs/39208987467)
+réussis : 25 tests TypeScript et 27 tests Rust. Les vérifications utilisent le
 compte local, avec Spotify Windows et le récepteur Spotisloth. Elles ne constituent
 pas une validation de tous les appareils Connect.
+
+Dans `33bafd3`, la sonde confirme le nom public et la photo du compte, la relecture
+du cache et les quatre propriétaires distincts de la première page. La version
+Windows a été relancée : photo de compte et noms publics des propriétaires sont
+visibles dans la bibliothèque, sans identifiant technique en sous-titre.
 
 Dans `7bf8ea4`, le menu du compte et la page Préférences sont vérifiés dans Tauri.
 Le passage de 320 à 96 kbit/s affiche le message de redémarrage ; après relance,

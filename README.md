@@ -55,6 +55,10 @@ playlist modifiable, ou de le retirer de la playlist ouverte. Les playlists
 modifiables proposent « Modifier les informations ». Glisser un titre change son
 ordre ; `Alt` + `↑` / `↓` déplace aussi la ligne qui a le focus.
 
+Le compte affiche le nom public et la photo de profil lorsqu’ils sont disponibles.
+Les propriétaires des playlists sont résolus en arrière-plan ; un profil absent
+conserve un libellé neutre au lieu de son identifiant technique.
+
 Les boutons habituels du lecteur activent l’aléatoire et font défiler les modes de
 répétition : désactivée, sélection entière, titre seul. Le menu « … » ajoute aussi
 un titre à la file d’attente. Dans la file, on peut déplacer les titres, en choisir
