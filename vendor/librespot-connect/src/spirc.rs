@@ -89,6 +89,7 @@ struct SpircTask {
     connect_state_logout_request: BoxedStreamResult<LogoutCommand>,
     playlist_update: BoxedStreamResult<PlaylistModificationInfo>,
     session_update: BoxedStreamResult<FallbackWrapper<SessionUpdate>>,
+    session_notifications: watch::Sender<u64>,
     connect_state_command: BoxedStream<RequestReply>,
     user_attributes_update: BoxedStreamResult<UserAttributesUpdate>,
     user_attributes_mutation: BoxedStreamResult<UserAttributesMutation>,
@@ -148,6 +149,7 @@ const UPDATE_STATE_DELAY: Duration = Duration::from_millis(200);
 /// The spotify connect handle
 pub struct Spirc {
     commands: mpsc::UnboundedSender<SpircCommand>,
+    session_notifications: watch::Receiver<u64>,
 }
 
 impl Spirc {
@@ -213,6 +215,7 @@ impl Spirc {
         let session_update = session
             .dealer()
             .listen_for("social-connect/v2/session_update", Message::try_from_json)?;
+        let (session_notifications, session_receiver) = watch::channel(0);
 
         let user_attributes_update = session
             .dealer()
@@ -257,6 +260,7 @@ impl Spirc {
             connect_state_logout_request,
             playlist_update,
             session_update,
+            session_notifications,
             connect_state_command,
             user_attributes_update,
             user_attributes_mutation,
@@ -275,7 +279,10 @@ impl Spirc {
             spirc_id,
         };
 
-        let spirc = Spirc { commands: cmd_tx };
+        let spirc = Spirc {
+            commands: cmd_tx,
+            session_notifications: session_receiver,
+        };
 
         let initial_volume = task.connect_state.device_info().volume;
         task.connect_state.set_volume(0);
@@ -291,6 +298,12 @@ impl Spirc {
         };
 
         Ok((spirc, task.run()))
+    }
+
+    /// Coalesced session-change notices, including newer JSON schema variants.
+    /// Consumers refresh the current session; no account data leaves this channel.
+    pub fn subscribe_session_updates(&self) -> watch::Receiver<u64> {
+        self.session_notifications.clone()
     }
 
     /// Safely shutdowns the spirc.
@@ -1728,6 +1741,8 @@ impl SpircTask {
     }
 
     fn handle_session_update(&mut self, session_update: FallbackWrapper<SessionUpdate>) {
+        self.session_notifications
+            .send_modify(|revision| *revision = revision.wrapping_add(1));
         // we know that this enum value isn't present in our current proto definitions, by that
         // the json parsing fails because the enum isn't known as proto representation
         const WBC: &str = "WIFI_BROADCAST_CHANGED";
@@ -1739,7 +1754,7 @@ impl SpircTask {
                 if fallback_inner.contains(WBC) {
                     log::debug!("Received SessionUpdate::{WBC}");
                 } else {
-                    log::warn!("SessionUpdate couldn't be parse correctly: {value:?}");
+                    log::debug!("SessionUpdate uses a newer schema; observers were notified");
                 }
                 return;
             }

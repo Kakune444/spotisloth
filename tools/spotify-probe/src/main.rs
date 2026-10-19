@@ -16,6 +16,8 @@ use std::{path::PathBuf, time::Duration};
 mod audio;
 #[path = "../../../src-tauri/src/connect.rs"]
 mod connect;
+#[path = "../../../src-tauri/src/jam.rs"]
+mod jam;
 #[path = "../../../src-tauri/src/library_api.rs"]
 mod library_api;
 #[path = "../../../src-tauri/src/profiles.rs"]
@@ -191,11 +193,18 @@ async fn diagnose_connect(
         credentials,
         player,
         Arc::new(mixer),
-        client,
+        client.clone(),
     )
     .await
     .map_err(|_| "Connect initialization failed")?;
     println!("CONNECT_SESSION_OK");
+    if std::env::args().any(|a| a == "--connect-jam-roundtrip") {
+        let result = diagnose_jam(&jam::JamClient::new(session.clone(), client), &runtime).await;
+        runtime.shutdown();
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        session.shutdown();
+        return result;
+    }
     let mut updates = runtime.subscribe();
     let result = tokio::time::timeout(Duration::from_secs(20), async {
         loop {
@@ -245,6 +254,55 @@ async fn diagnose_connect(
     session.shutdown();
     result.map_err(|_| "Connect device updates were not confirmed")??;
     actions?;
+    Ok(())
+}
+
+async fn diagnose_jam(
+    jam: &jam::JamClient,
+    runtime: &connect::ConnectRuntime,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if jam
+        .current()
+        .await
+        .map_err(|e| format!("Jam read failed: {e:?}"))?
+        .is_some()
+    {
+        return Err("Refusing diagnostic: a Jam already exists".into());
+    }
+    let mut notices = runtime.spirc.subscribe_session_updates();
+    let created = jam
+        .create()
+        .await
+        .map_err(|e| format!("Jam creation failed: {e:?}"))?;
+    println!(
+        "JAM_CREATED: owner={} members={} invitation={}",
+        created.owner,
+        created.members.len(),
+        !created.invite_url.is_empty()
+    );
+    let notified = tokio::time::timeout(Duration::from_secs(8), notices.changed())
+        .await
+        .is_ok();
+    let readback = jam
+        .current()
+        .await
+        .map_err(|e| format!("Jam verification failed: {e:?}"))?;
+    let matched = readback
+        .as_ref()
+        .is_some_and(|s| s.id == created.id && s.owner && !s.invite_url.is_empty());
+    // End only the session returned by this diagnostic; the API checks current ownership again.
+    jam.end(&created.id)
+        .await
+        .map_err(|e| format!("Jam cleanup failed: {e:?}"))?;
+    let cleared = jam
+        .current()
+        .await
+        .map_err(|e| format!("Jam final verification failed: {e:?}"))?
+        .is_none();
+    println!("JAM_ROUNDTRIP: readback={matched} notification={notified} cleared={cleared}");
+    if !matched || !cleared || !notified {
+        return Err("Jam roundtrip incomplete".into());
+    }
     Ok(())
 }
 

@@ -22,10 +22,12 @@ use tauri::{Emitter, Manager, State};
 use tokio::sync::{Mutex, Semaphore};
 mod audio;
 mod connect;
+mod jam;
 mod library_api;
 mod profiles;
 use audio::{AudioPreferences, AudioQuality};
 use connect::{ConnectAction, ConnectError, ConnectRuntime, ConnectView};
+use jam::{JamClient, JamSession};
 use library_api::{LibraryApi, LibraryError};
 use library_api::{PlaylistEdit, playlist_permissions, revision_hex};
 use profiles::{Profiles, UserProfile};
@@ -132,6 +134,7 @@ struct Native {
     session: Session,
     player: Arc<Player>,
     connect: Arc<ConnectRuntime>,
+    jam: Arc<JamClient>,
     quality: AudioQuality,
 }
 struct Backend {
@@ -508,8 +511,20 @@ async fn connect_spotify(
         }
     }
     let mut updates = runtime.subscribe();
+    let mut jam_notices = runtime.spirc.subscribe_session_updates();
+    let jam_app = app.clone();
+    let jam_session = session.clone();
+    tauri::async_runtime::spawn(async move {
+        while jam_notices.changed().await.is_ok() {
+            if jam_session.is_invalid() {
+                break;
+            }
+            let _ = jam_app.emit("jam-changed", ());
+        }
+    });
     *state.native.lock().await = Some(Native {
         session: session.clone(),
+        jam: Arc::new(JamClient::new(session.clone(), state.client.clone())),
         player,
         connect: runtime,
         quality,
@@ -1102,6 +1117,36 @@ async fn get_connect_state(state: State<'_, Arc<Backend>>) -> Result<ConnectView
     drop(native);
     Ok(runtime.view().await)
 }
+
+async fn jam_client(state: &Backend) -> Result<Arc<JamClient>> {
+    state
+        .native
+        .lock()
+        .await
+        .as_ref()
+        .map(|n| n.jam.clone())
+        .ok_or_else(|| error("AUTH_REQUIRED", "Connectez-vous à Spotify."))
+}
+#[tauri::command]
+async fn get_jam(state: State<'_, Arc<Backend>>) -> Result<Option<JamSession>> {
+    jam_client(&state)
+        .await?
+        .current()
+        .await
+        .map_err(Into::into)
+}
+#[tauri::command]
+async fn create_jam(state: State<'_, Arc<Backend>>) -> Result<JamSession> {
+    jam_client(&state).await?.create().await.map_err(Into::into)
+}
+#[tauri::command]
+async fn end_jam(state: State<'_, Arc<Backend>>, session_id: String) -> Result<()> {
+    jam_client(&state)
+        .await?
+        .end(&session_id)
+        .await
+        .map_err(Into::into)
+}
 #[tauri::command]
 async fn connect_command(
     state: State<'_, Arc<Backend>>,
@@ -1152,6 +1197,9 @@ pub fn run() {
             get_context_page,
             get_track_details,
             get_connect_state,
+            get_jam,
+            create_jam,
+            end_jam,
             connect_command
         ])
         .on_window_event(|window, event| {

@@ -78,6 +78,16 @@ occurrences ont bien été créées par le test. La sonde refuse un autre titre 
 élément provenant du contexte ; ce mode ne doit pas servir à nettoyer une file
 personnelle sans vérification.
 
+## Jam (diagnostic de création et fermeture)
+
+`--stored --connect-jam-roundtrip` vérifie l'absence de Jam, crée une session,
+relit son état, attend une notification Connect puis termine uniquement la session
+renvoyée. Fermer Spotisloth avant le test. Le diagnostic refuse une session déjà
+existante et n'envoie aucune invitation. Il affiche des booléens et des compteurs,
+sans lien d'invitation, membre, identifiant ou jeton.
+
+`SPOTISLOTH_JAM_TRACE=1` ajoute uniquement le statut HTTP et l'indication de mutation.
+
 ## Ressources
 
 Voir le [protocole de mesure](../docs/PERFORMANCE.md) pour `Measure-Client.ps1`.
