@@ -29,8 +29,9 @@ import { AudioSettingsView } from "./ui/settings.ts";
 type Status = {
   connected: boolean;
   nativeReady: boolean;
-  username: string | null;
 };
+type UserProfile = { displayName: string; image: string };
+let accountProfile: UserProfile | null = null;
 type NativeTrack = {
   uri: string;
   name: string;
@@ -59,7 +60,7 @@ type Collection = {
   offset: number;
 };
 type AppError = { code?: string; message?: string; retryAfterSeconds?: number };
-let status: Status = { connected: false, nativeReady: false, username: null };
+let status: Status = { connected: false, nativeReady: false };
 let playback: Playback = {
   selection: "",
   track: null,
@@ -157,6 +158,7 @@ const likedCard: Card = {
 };
 
 const paths: Record<string, string> = {
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 22v-2a8 8 0 0 1 16 0v2"/>',
   saved: '<circle cx="12" cy="12" r="10"/><path d="m7 12 3 3 7-7"/>',
   more: '<circle cx="4" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="20" cy="12" r="1"/>',
   add: '<circle cx="12" cy="12" r="10"/><path d="M7 12h10M12 7v10"/>',
@@ -248,6 +250,7 @@ function showError(value: unknown): void {
     toast.hidden = true;
   }, 6500);
   if (err.code === "AUTH_REQUIRED") {
+    accountProfile = null;
     status.connected = false;
     status.nativeReady = false;
     renderAccount();
@@ -264,9 +267,22 @@ function cover(card: Pick<Card, "image" | "name" | "kind">, cls = ""): string {
 }
 
 function renderAccount(): void {
+  const name = accountProfile?.displayName || "Compte Spotify";
+  const photo = imageUrl(accountProfile?.image);
+  const initial = accountProfile?.displayName
+    ? Array.from(accountProfile.displayName)[0].toUpperCase()
+    : "";
+  const open = document.querySelector(".profile")?.hasAttribute("open");
   byId("account").innerHTML = status.connected
-    ? `<details class="profile"><summary title="Compte">${esc((status.username || "S")[0].toUpperCase())}</summary><div class="profile-menu"><button id="show-settings">Préférences</button><button id="disconnect">Se déconnecter</button></div></details>`
+    ? `<details class="profile" ${open ? "open" : ""}><summary title="${esc(name)}" aria-label="${esc(name)}"><span>${initial ? esc(initial) : icon("user")}</span>${photo ? `<img src="${esc(photo)}" alt="" referrerpolicy="no-referrer"/>` : ""}</summary><div class="profile-menu"><div class="profile-identity">${esc(name)}</div><button id="show-settings">Préférences</button><button id="disconnect">Se déconnecter</button></div></details>`
     : '<button class="pill white" id="connect">Se connecter</button>';
+  document
+    .querySelector<HTMLImageElement>(".profile summary img")
+    ?.addEventListener(
+      "error",
+      (event) => (event.currentTarget as HTMLImageElement).remove(),
+      { once: true },
+    );
   byId<HTMLButtonElement>("create-playlist").disabled =
     !status.nativeReady || playlistPending;
 }
@@ -448,6 +464,7 @@ async function search(query: string): Promise<void> {
 }
 
 async function loadLibrary(offset = 0): Promise<void> {
+  const epoch = connectEpoch;
   if (libraryLoading) return;
   libraryLoading = true;
   try {
@@ -455,6 +472,7 @@ async function loadLibrary(offset = 0): Promise<void> {
       items: unknown[];
       nextOffset: number | null;
     }>("get_library", { offset });
+    if (epoch !== connectEpoch || !status.connected) return;
     const incoming = collectCards(result.items, 40);
     library = [
       ...new Map(
@@ -466,11 +484,58 @@ async function loadLibrary(offset = 0): Promise<void> {
     ];
     libraryNext = result.nextOffset;
     renderLibrary();
+    void resolveLibraryOwners(incoming, epoch);
   } catch (err) {
     if ((err as AppError)?.code !== "AUTH_REQUIRED") showError(err);
   } finally {
     libraryLoading = false;
     renderLibrary();
+  }
+}
+
+async function resolveLibraryOwners(
+  items: Card[],
+  epoch: number,
+): Promise<void> {
+  const usernames = [
+    ...new Set(items.flatMap((card) => (card.ownerId ? [card.ownerId] : []))),
+  ];
+  if (!usernames.length) return;
+  try {
+    const profiles = await invoke<
+      { id: string; profile: UserProfile | null }[]
+    >("get_user_profiles", { usernames });
+    if (epoch !== connectEpoch || !status.connected) return;
+    const names = new Map(
+      profiles
+        .filter((item) => item.profile)
+        .map((item) => [item.id, item.profile!.displayName]),
+    );
+    for (const card of library) {
+      const name = card.ownerId && names.get(card.ownerId);
+      if (name) card.subtitle = name;
+    }
+    // Preserve the sidebar's focus and scroll position while names arrive.
+    document
+      .querySelectorAll<HTMLElement>(".library-item[data-uri]")
+      .forEach((row) => {
+        const card = library.find((card) => card.uri === row.dataset.uri);
+        const label = row.querySelector("small");
+        if (card && label) label.textContent = card.subtitle;
+      });
+  } catch {
+    /* Profiles are optional; music and playlist controls remain available. */
+  }
+}
+
+async function loadAccountProfile(epoch: number): Promise<void> {
+  try {
+    const profile = await invoke<UserProfile | null>("get_account_profile");
+    if (epoch !== connectEpoch || !status.connected) return;
+    accountProfile = profile;
+    renderAccount();
+  } catch {
+    /* Keep a neutral avatar when the public profile is unavailable. */
   }
 }
 
@@ -943,6 +1008,7 @@ async function connect(interactive: boolean): Promise<void> {
   try {
     status = await invoke<Status>("connect_spotify", { interactive });
     renderAccount();
+    if (status.nativeReady) void loadAccountProfile(connectEpoch);
     if (!connectState.available) {
       const initial = await invoke<ConnectState>("get_connect_state");
       if (!connectState.available) applyConnect(initial);
@@ -1030,7 +1096,8 @@ document.addEventListener("click", async (event) => {
     savedTracks.clear();
     try {
       await invoke("disconnect_spotify");
-      status = { connected: false, nativeReady: false, username: null };
+      status = { connected: false, nativeReady: false };
+      accountProfile = null;
       library = [];
       libraryNext = null;
       queue.clear();

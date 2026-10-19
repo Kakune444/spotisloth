@@ -18,6 +18,8 @@ mod audio;
 mod connect;
 #[path = "../../../src-tauri/src/library_api.rs"]
 mod library_api;
+#[path = "../../../src-tauri/src/profiles.rs"]
+mod profiles;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -63,6 +65,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     tokio::time::timeout(Duration::from_secs(30), session.connect(credentials, false)).await??;
     println!("SESSION_OK");
+    if std::env::args().any(|arg| arg == "--profiles") {
+        diagnose_profiles(&session).await?;
+    }
     if std::env::args().any(|arg| arg == "--playlist-roundtrip") {
         diagnose_playlist(&session).await?;
     }
@@ -112,6 +117,54 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     session.shutdown();
     result??;
     println!("PROBE_OK");
+    Ok(())
+}
+
+async fn diagnose_profiles(session: &Session) -> Result<(), Box<dyn std::error::Error>> {
+    let profiles = profiles::Profiles::new();
+    let own = profiles
+        .get(session, &session.username())
+        .await
+        .ok_or("Public profile unavailable")?;
+    let cached = profiles.get(session, &session.username()).await;
+    if cached.as_ref() != Some(&own) {
+        return Err("Profile cache mismatch".into());
+    }
+    let bytes = tokio::time::timeout(
+        Duration::from_secs(15),
+        session.spclient().get_rootlist(0, Some(40)),
+    )
+    .await??;
+    let root =
+        librespot_protocol::playlist4_external::SelectedListContent::parse_from_bytes(&bytes)?;
+    let mut owners = root
+        .contents
+        .as_ref()
+        .map(|c| {
+            c.meta_items
+                .iter()
+                .map(|m| m.owner_username().to_owned())
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    owners.sort();
+    owners.dedup();
+    let mut resolved = 0;
+    for owner in owners.iter().take(8) {
+        if let Some(profile) = profiles.get(session, owner).await {
+            if profile.display_name == *owner {
+                return Err("Identifier displayed as name".into());
+            }
+            resolved += 1;
+        }
+    }
+    println!(
+        "PROFILES_OK: account_name=true avatar={} cache_match=true owners_checked={} owners_resolved={}",
+        !own.image.is_empty(),
+        owners.len().min(8),
+        resolved
+    );
     Ok(())
 }
 

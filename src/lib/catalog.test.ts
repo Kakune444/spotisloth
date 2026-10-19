@@ -103,3 +103,15 @@ test("formats absent and invalid player positions predictably", () => {
   assert.equal(formatTime(-1), "0:00");
   assert.equal(formatTime(Number.NaN), "0:00");
 });
+
+test("playlist owner identifiers stay separate from display names", () => {
+  const [card] = collectCards({
+    uri: "spotify:playlist:example",
+    name: "Playlist",
+    ownerId: "technical-user-id",
+    ownerV2: { data: { name: null } },
+  });
+  assert.equal(card.ownerId, "technical-user-id");
+  assert.equal(card.subtitle, "Playlist");
+  assert.ok(!card.subtitle.includes(card.ownerId!));
+});

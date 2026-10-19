@@ -5,6 +5,7 @@ export type Card = {
   image: string;
   kind: string;
   durationMs: number;
+  ownerId?: string;
 };
 export type Section = { name: string; items: Card[] };
 type Json = Record<string, unknown>;
@@ -89,6 +90,9 @@ export function toCard(value: unknown): Card | null {
     uri,
     name,
     kind,
+    ...(kind === "playlist" && string(data.ownerId)
+      ? { ownerId: string(data.ownerId) }
+      : {}),
     subtitle: by || labels[kind] || "",
     image: findImage(
       data.coverArt ??

@@ -23,10 +23,12 @@ use tokio::sync::{Mutex, Semaphore};
 mod audio;
 mod connect;
 mod library_api;
+mod profiles;
 use audio::{AudioPreferences, AudioQuality};
 use connect::{ConnectAction, ConnectError, ConnectRuntime, ConnectView};
 use library_api::{LibraryApi, LibraryError};
 use library_api::{PlaylistEdit, playlist_permissions, revision_hex};
+use profiles::{Profiles, UserProfile};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -133,6 +135,7 @@ struct Native {
     quality: AudioQuality,
 }
 struct Backend {
+    profiles: Profiles,
     client: reqwest::Client,
     native: Mutex<Option<Native>>,
     imported: Mutex<Option<ImportedAuth>>,
@@ -159,7 +162,6 @@ struct TrackView {
 struct Status {
     connected: bool,
     native_ready: bool,
-    username: Option<String>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -245,6 +247,7 @@ impl Backend {
 
     fn new() -> Self {
         Self {
+            profiles: Profiles::new(),
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .timeout(Duration::from_secs(15))
@@ -389,10 +392,6 @@ async fn get_status(state: State<'_, Arc<Backend>>) -> Result<Status> {
     Ok(Status {
         connected: ready || state.imported.lock().await.is_some(),
         native_ready: ready,
-        username: native
-            .as_ref()
-            .filter(|_| ready)
-            .map(|n| n.session.username()),
     })
 }
 
@@ -549,6 +548,7 @@ async fn disconnect_spotify(state: State<'_, Arc<Backend>>) -> Result<()> {
     }
     state.imported.lock().await.take();
     state.cache.lock().await.clear();
+    state.profiles.clear().await;
     for service in ["spotisloth-desktop", "fastify-desktop"] {
         if let Ok(entry) = keyring::Entry::new(service, "spotify-session") {
             match entry.delete_credential() {
@@ -657,7 +657,7 @@ fn library_page(
                 let owner = meta.map(|m| m.owner_username()).unwrap_or("");
                 let own = !username.is_empty() && owner == username;
                 let editable = meta.and_then(|m| m.capabilities.as_ref()).and_then(|c| c.can_edit_items).unwrap_or(own);
-                Some(json!({"uri":uri,"name":name,"ownerV2":{"data":{"name":owner}},"canEditItems":editable}))
+                Some(json!({"uri":uri,"name":name,"ownerId":owner,"ownerV2":{"data":{"name":null}},"canEditItems":editable}))
             })
         })
         .collect();
@@ -1013,6 +1013,35 @@ async fn get_track_details(
     state.track_views(&session, uris).await
 }
 
+#[tauri::command]
+async fn get_account_profile(state: State<'_, Arc<Backend>>) -> Result<Option<UserProfile>> {
+    let session = state.session().await?;
+    Ok(state.profiles.get(&session, &session.username()).await)
+}
+
+#[tauri::command]
+async fn get_user_profiles(
+    state: State<'_, Arc<Backend>>,
+    mut usernames: Vec<String>,
+) -> Result<Vec<Value>> {
+    if usernames.len() > 40 {
+        return Err(error("INPUT", "La liste de profils est trop longue."));
+    }
+    usernames.sort();
+    usernames.dedup();
+    let session = state.session().await?;
+    let session = &session;
+    let profiles = &state.profiles;
+    Ok(stream::iter(usernames)
+        .map(|id| async move {
+            let profile = profiles.get(session, &id).await;
+            json!({"id":id,"profile":profile})
+        })
+        .buffer_unordered(3)
+        .collect()
+        .await)
+}
+
 fn audio_preferences_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf> {
     app.path()
         .app_local_data_dir()
@@ -1096,6 +1125,8 @@ pub fn run() {
         .manage(Arc::new(Backend::new()))
         .invoke_handler(tauri::generate_handler![
             get_status,
+            get_account_profile,
+            get_user_profiles,
             get_audio_settings,
             set_audio_quality,
             connect_spotify,
@@ -1159,12 +1190,15 @@ mod tests {
             let mut attributes = ListAttributes::new();
             attributes.set_name(name.into());
             meta.attributes = Some(attributes).into();
+            meta.set_owner_username("technical-owner-id".into());
             contents.meta_items.push(meta);
         }
         root.contents = Some(contents).into();
         let page = library_page(&root, 0, "owner");
         assert_eq!(page["items"].as_array().unwrap().len(), 1);
         assert_eq!(page["items"][0]["name"], "Ma playlist");
+        assert_eq!(page["items"][0]["ownerId"], "technical-owner-id");
+        assert!(page["items"][0]["ownerV2"]["data"]["name"].is_null());
         assert_eq!(
             page["items"][0]["uri"],
             "spotify:playlist:37i9dQZF1DXcBWIGoYBM5M"
