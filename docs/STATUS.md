@@ -24,7 +24,8 @@ dans l'exécutable avant d'être déclarée opérationnelle.
 | File locale                            | Ajout prioritaire, doublon distinct, métadonnées différées, enchaînement après fin et glisser-déposer Windows vérifiés                                                                                                                         |
 | File et appareils Connect              | Deux appareils détectés ; commandes et file vérifiées dans Tauri. Transferts aller-retour vérifiés en lecture et en pause, avec conservation des modes et des 40 titres suivants ; volume et ajout/retrait d’un doublon confirmés par la sonde |
 | Paroles, hors ligne, médias Windows    | À étudier et implémenter                                                                                                                                                                                                                       |
-| Comparaison de ressources équivalentes | Non effectuée ; relevé préliminaire documenté                                                                                                                                                                                                  |
+| Comparaison de ressources équivalentes | Cinq relances et relevés au repos par client effectués ; comparaison après correctif et lecture prolongée à terminer, voir PERFORMANCE.md                                                                                                      |
+| Jam Spotify                            | Hébergement, profil des membres, lien et QR code vérifiés dans Tauri ; création/relecture/notification/fermeture vérifiées par la sonde. Participation d'un autre compte à confirmer                                                           |
 | Installateur et distribution publique  | En attente d'une version utilisable                                                                                                                                                                                                            |
 
 ## Limites techniques connues
@@ -157,7 +158,9 @@ permettre le glisser-déposer HTML des lignes. Ce réglage suit la
 [configuration officielle Tauri](https://v2.tauri.app/reference/config/#windowconfig).
 
 L’implémentation utilise les appareils enregistrés sur le compte. La découverte
-locale par mDNS, l’appairage Cast et les sessions Jam ne sont pas implémentés.
+locale par mDNS et l’appairage Cast ne sont pas implémentés.
+Le Jam permet d'héberger et d'inviter ; rejoindre depuis un lien dans Spotisloth
+et gérer les autorisations des participants restent à implémenter.
 Les appareils physiques, les restrictions propres à chaque modèle et une longue
 perte réseau nécessitent des vérifications supplémentaires.
 La conservation de l’ordre porte sur le tampon publié par l’appareil source ; elle
@@ -165,11 +168,18 @@ ne garantit pas le même tirage aléatoire au-delà de ce tampon.
 
 ## Version vérifiée
 
-Code compilé : `33bafd3`.
-[Compilation Windows et tests](https://github.com/Kakune444/spotisloth/actions/runs/39208987467)
-réussis : 25 tests TypeScript et 27 tests Rust. Les vérifications utilisent le
+Code compilé : `862abde`.
+[Compilation Windows et tests](https://github.com/Kakune444/spotisloth/actions/runs/39303187533)
+réussis : 31 tests TypeScript et 38 tests Rust. Les vérifications utilisent le
 compte local, avec Spotify Windows et le récepteur Spotisloth. Elles ne constituent
 pas une validation de tous les appareils Connect.
+
+Dans `862abde`, le cycle Jam réel confirme la création, le lien partageable,
+la relecture, une notification Dealer et la fermeture avec retour à l'absence de
+session. Le panneau Tauri affiche l'hôte, sa photo et le QR code ; « Copier le lien »
+confirme la copie. Un transfert en lecture vers Spotisloth conserve le Jam ; le
+serveur confirme Spotisloth comme appareil hôte et la position continue de progresser.
+Le protocole et les limites sont détaillés dans [JAM.md](JAM.md).
 
 Dans `33bafd3`, la sonde confirme le nom public et la photo du compte, la relecture
 du cache et les quatre propriétaires distincts de la première page. La version

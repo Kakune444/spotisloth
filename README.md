@@ -70,6 +70,12 @@ ramène ici. Un bandeau vert indique une lecture sur un autre appareil. Les appa
 doivent être connectés au même compte Spotify. Les commandes indisponibles sur
 l’appareil actif sont désactivées.
 
+Dans ce sélecteur, « Lancer un Jam » ouvre la session partagée avec ses membres,
+son lien et son QR code d'invitation. L'hôte peut la terminer après confirmation.
+La participation depuis un autre compte reste à vérifier ; rejoindre un Jam depuis
+un lien dans Spotisloth et gérer les droits des membres restent à développer.
+Voir [le détail de cette intégration](docs/JAM.md).
+
 Le menu du compte propose « Préférences » → « Qualité audio » : 96, 160 ou
 320 kbit/s, avec 320 kbit/s par défaut. Le choix est enregistré localement et
 s’applique au prochain démarrage du lecteur. La qualité effectivement disponible
