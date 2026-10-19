@@ -66,6 +66,17 @@ ramène ici. Un bandeau vert indique une lecture sur un autre appareil. Les appa
 doivent être connectés au même compte Spotify. Les commandes indisponibles sur
 l’appareil actif sont désactivées.
 
+Le menu du compte propose « Préférences » → « Qualité audio » : 96, 160 ou
+320 kbit/s, avec 320 kbit/s par défaut. Le choix est enregistré localement et
+s’applique au prochain démarrage du lecteur. La qualité effectivement disponible
+peut varier selon le titre.
+
+**La lecture locale ne prend pas en charge le lossless.** Le moteur
+[librespot ne le prend pas en charge](https://github.com/librespot-org/librespot/issues/1583).
+Sur un appareil distant compatible, Spotify Connect laisse cet appareil gérer
+son audio ; la page Préférences affiche la qualité qu’il signale. Le niveau demandé
+et la compatibilité de l’appareil ne suffisent pas à afficher « Lossless ».
+
 ## Suivi
 
 - [Plan et critères de validation](docs/PLAN.md)

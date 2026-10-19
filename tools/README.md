@@ -30,6 +30,11 @@ validité de la connexion normale. Ne jamais publier ce fichier.
 
 ## Spotify Connect
 
+La sonde partage les réglages de construction du lecteur : 320 kbit/s demandés
+par défaut. Elle ne lit pas le fichier de préférences de l’application.
+`CONNECT_QUALITY` affiche uniquement le niveau courant signalé par un appareil
+distant, ou `unknown`. Ce résultat ne mesure pas le format de la sortie audio locale.
+
 Avec Spotify ouvert sur un autre appareil du même compte, ce diagnostic enregistre
 un récepteur temporaire et attend les mises à jour de la liste des appareils :
 

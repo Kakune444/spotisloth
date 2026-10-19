@@ -34,5 +34,9 @@ pause, piste suivante/précédente, position, volume, aléatoire, répétition ;
 Spotify Connect ; médias Windows ; paroles ; téléchargements et mode hors ligne ;
 paramètres ; fonctions disponibles selon le compte.
 
+La qualité audio locale propose 96/160/320 kbit/s. Le lossless reste une fonction
+manquante du moteur actuel ; le pilotage Connect d’un appareil compatible est un
+parcours distinct. Voir [les limites et vérifications audio](STATUS.md#qualité-audio-et-lossless).
+
 Le périmètre complet reste la cible. Toute fonction inaccessible doit être
 documentée et discutée, sans la retirer silencieusement du plan.

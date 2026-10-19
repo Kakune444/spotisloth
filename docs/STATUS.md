@@ -1,6 +1,6 @@
 # État du prototype
 
-Date de vérification : 17 octobre 2026. Une fonction implémentée reste à vérifier
+Date de vérification : 19 octobre 2026. Une fonction implémentée reste à vérifier
 dans l'exécutable avant d'être déclarée opérationnelle.
 
 | Élément                                | État et preuve                                                                                                                                                                                                                                 |
@@ -73,6 +73,29 @@ ouvre un sélecteur ne contenant que des playlists modifiables. Sa recherche a
 été testée. Les mutations complètes sont vérifiées par la sonde qui partage le
 même service Rust ; tous les clics d’écriture n’ont pas été rejoués dans l’interface.
 
+## Qualité audio et lossless
+
+Les préférences proposent 96, 160 et 320 kbit/s. La lecture locale demande désormais
+320 kbit/s par défaut, au lieu des 160 kbit/s implicites de librespot. Le moteur peut
+utiliser un autre format disponible pour un titre ; le réglage décrit une préférence,
+pas une mesure du flux décodé. Il est enregistré dans un petit fichier local, remplacé
+sans exposer une écriture partielle. Il s’applique à la prochaine création du lecteur ;
+l’interface indique lorsqu’un redémarrage est nécessaire.
+
+Le lossless local reste indisponible avec librespot 0.8.0. La présence d’un décodeur
+FLAC parmi ses dépendances ne signifie pas que le service de streaming lossless de
+Spotify est pris en charge. Les mainteneurs le confirment dans
+[le suivi officiel de librespot](https://github.com/librespot-org/librespot/issues/1583).
+
+Un appareil distant compatible peut utiliser son propre moteur lossless.
+La page Préférences utilise le niveau courant de `playback_quality`, jamais son
+niveau cible. Les niveaux HiFi exigent aussi `hifi_status=on`. Une capacité annoncée,
+un niveau inconnu ou un état de chargement ne produit pas d’indication Lossless.
+Le rapport distant est ignoré lorsque Spotisloth devient l’appareil actif pour éviter
+de reprendre la qualité du lecteur précédent. Il ne constitue pas une mesure du
+signal reçu par un casque ou un DAC. Le réglage de qualité d’un autre appareil reste
+dans Spotify, selon [la procédure officielle](https://support.spotify.com/fr/article/lossless-audio-quality/).
+
 ## Spotify Connect et file partagée
 
 Le même moteur Rust assure la lecture audio et le récepteur Connect. La réponse
@@ -126,16 +149,25 @@ ne garantit pas le même tirage aléatoire au-delà de ce tampon.
 
 ## Version vérifiée
 
-Code compilé : `670abfb`.
-[Compilation Windows et tests](https://github.com/Kakune444/spotisloth/actions/runs/39019549135)
-réussis : 24 tests TypeScript et 22 tests Rust. Les vérifications utilisent le
+Code compilé : `7bf8ea4`.
+[Compilation Windows et tests](https://github.com/Kakune444/spotisloth/actions/runs/39207350798)
+réussis : 24 tests TypeScript et 25 tests Rust. Les vérifications utilisent le
 compte local, avec Spotify Windows et le récepteur Spotisloth. Elles ne constituent
 pas une validation de tous les appareils Connect.
+
+Dans `7bf8ea4`, le menu du compte et la page Préférences sont vérifiés dans Tauri.
+Le passage de 320 à 96 kbit/s affiche le message de redémarrage ; après relance,
+96 kbit/s est conservé et devient le réglage actif. Le choix 320 kbit/s est ensuite
+rétabli et confirmé actif après une seconde relance. La qualité distante « Lossless »
+est lue par la sonde et affichée dans Tauri.
+L’aller-retour Spotify → récepteur de diagnostic → Spotify conserve la pause, la
+position et les 40 titres suivants ; Spotify signale encore Lossless après le retour.
+Le format réellement décodé par la sortie locale n’a pas été instrumenté.
 
 Dans Tauri (`35d04f1`), la lecture native apparaît dans Spotify et les commandes de
 pause/reprise suivent l’appareil actif. La position distante, le choix d’un titre
 de la file et son déplacement au clavier ont été vérifiés ; l’ordre déplacé a été
-restauré. La version finale `670abfb` a été lancée sous Windows : reconnexion,
+restauré. La version `670abfb` a été lancée sous Windows : reconnexion,
 accueil, titre distant, bandeau de lecture, sélecteur d’appareils et affichage de la
 file partagée sont vérifiés.
 
