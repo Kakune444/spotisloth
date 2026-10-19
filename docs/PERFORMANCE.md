@@ -40,10 +40,37 @@ fonctions absentes et conserver les résultats bruts localement.
 Objectifs provisoires : réduire sensiblement mémoire et latences, sans régression
 fonctionnelle. Les seuils définitifs seront fixés après le premier prototype réel.
 
+## Campagne du 19 octobre 2026
+
+La campagne utilise les versions release sur le même PC et le même compte, une
+application à la fois. Les processus sont fermés entièrement entre les passages.
+Les caches de Windows, du réseau et des applications sont conservés : il s’agit
+de relances de processus à chaud, pas de démarrages après redémarrage du PC.
+Les clients sont lancés maximisés. Les mesures de lecture demandent 320 kbit/s
+dans les deux applications ; le réglage Spotify initial est rétabli après les essais.
+Pour Tauri, le script définit `SPOTISLOTH_BENCHMARK_MAXIMIZE=1` dans le processus
+enfant : ce réglage de diagnostic maximise la fenêtre à sa création, sans modifier
+le lancement habituel ni les composants de l’interface.
+
+Le temps de démarrage part de la demande de lancement. Il se termine au premier
+relevé d’accessibilité présentant l’accueil chargé, des cartes et la bibliothèque.
+La fenêtre seule ne suffit pas. Les relevés encadrent le délai entre la dernière
+observation non prête et la première observation prête ; leur coût est inclus.
+Les résultats sont arrondis en conséquence. Aucun texte de compte ou de catalogue
+n’est enregistré avec les mesures.
+
+Le relevé mémoire distingue la RAM privée résidente (`WorkingSetPrivate`), la
+mémoire privée engagée (`PrivateMemorySize64`) et la somme des working sets.
+Seule la première évite de compter plusieurs fois les pages partagées tout en
+mesurant la résidence en RAM. Le CPU est la différence des temps processeur,
+pondérée par le temps écoulé et divisée par les 16 processeurs logiques du PC.
+Les processus apparus pendant un intervalle sont pris en compte et les PID réutilisés
+sont distingués par leur date de création. Les premiers compteurs CPU sont ignorés.
+
 ## Outil de relevé local
 
 `tools/Measure-Client.ps1` suit le processus principal et tous ses descendants,
-y compris WebView2. Il relève mémoire privée, working set et CPU (part de la capacité
+y compris WebView2. Il relève RAM privée résidente, mémoire privée engagée, working set et CPU (part de la capacité
 totale de la machine), sans enregistrer les lignes de commande ni informations de compte.
 
 ```powershell
@@ -54,3 +81,7 @@ totale de la machine), sans enregistrer les lignes de commande ni informations d
 Le premier échantillon CPU est ignoré ; une application doit déjà être ouverte.
 Les médianes de mémoire sont des relevés ponctuels. Le script ne mesure pas la
 latence d'affichage ni les coupures audio et ne valide pas, seul, un gain global.
+
+`Start-ClientBenchmark.ps1` relance un client en fermant son exécutable résolu et
+les descendants observés. Il conserve l’horodatage du lancement et n’efface aucun
+cache. `-StopOnly` permet de fermer l’autre client avant une mesure.

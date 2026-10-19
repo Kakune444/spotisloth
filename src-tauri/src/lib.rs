@@ -1122,6 +1122,14 @@ async fn connect_command(
 
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            if std::env::var("SPOTISLOTH_BENCHMARK_MAXIMIZE").as_deref() == Ok("1") {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.maximize()?;
+                }
+            }
+            Ok(())
+        })
         .manage(Arc::new(Backend::new()))
         .invoke_handler(tauri::generate_handler![
             get_status,

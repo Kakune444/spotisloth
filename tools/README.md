@@ -81,3 +81,10 @@ personnelle sans vérification.
 ## Ressources
 
 Voir le [protocole de mesure](../docs/PERFORMANCE.md) pour `Measure-Client.ps1`.
+
+Le relevé sépare RAM privée résidente, mémoire engagée et working set total. Le CPU
+est pondéré par les intervalles réels, sur la capacité totale du PC. `-Scenario`
+vaut `Idle`, `Navigation` ou `Playback` ; `-Seconds` accepte jusqu’à 900 secondes.
+`Start-ClientBenchmark.ps1` ferme complètement puis relance l’application, avec
+un horodatage UTC. Ces scripts ne vident pas les caches et n’enregistrent pas les
+contenus de l’interface, les lignes de commande ou les identifiants de compte.
