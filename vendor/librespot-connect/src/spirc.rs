@@ -1750,6 +1750,29 @@ impl SpircTask {
         let mut session_update = match session_update {
             FallbackWrapper::Inner(update) => update,
             FallbackWrapper::Fallback(value) => {
+                // Recent desktop sessions contain fields/enums absent from the pinned
+                // protobuf. Keep the host's Connect session identity in sync anyway.
+                if let Some(session) = value.get("session") {
+                    let host = session
+                        .get("hostActiveDeviceId")
+                        .or_else(|| session.get("host_active_device_id"))
+                        .and_then(serde_json::Value::as_str);
+                    let id = session
+                        .get("session_id")
+                        .and_then(serde_json::Value::as_str);
+                    if host == Some(self.session.device_id()) {
+                        if let Some(id) = id.filter(|id| {
+                            !id.is_empty()
+                                && id.len() <= 128
+                                && id
+                                    .bytes()
+                                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+                        }) {
+                            self.session.set_session_id(id);
+                            self.connect_state.set_session_id(id.to_owned());
+                        }
+                    }
+                }
                 let fallback_inner = value.to_string();
                 if fallback_inner.contains(WBC) {
                     log::debug!("Received SessionUpdate::{WBC}");

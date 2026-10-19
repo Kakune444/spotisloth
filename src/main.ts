@@ -25,6 +25,7 @@ import {
 import { DevicePicker } from "./ui/devices.ts";
 import { QueueView } from "./ui/queue.ts";
 import { AudioSettingsView } from "./ui/settings.ts";
+import { JamView } from "./ui/jam.ts";
 
 type Status = {
   connected: boolean;
@@ -211,7 +212,7 @@ byId("app").innerHTML = `
       <div id="library-list" class="library-list"><div class="library-empty"><strong>Votre bibliothèque vous attend</strong><p>Connectez-vous pour retrouver votre musique.</p></div></div>
     </aside>
     <main class="content pane" id="content" tabindex="-1" aria-label="Contenu Spotify"><div id="main-content"></div></main>
-    <aside class="now-playing pane" aria-label="En cours de lecture"><h2>En cours de lecture</h2><div id="now-playing"><div class="now-empty">${icon("music")}<p>Choisissez un titre<br/>pour commencer à écouter.</p></div></div></aside>
+    <aside class="now-playing pane" aria-label="En cours de lecture"><h2 id="right-panel-heading">En cours de lecture</h2><section id="jam-panel" aria-label="Jam" hidden></section><div id="now-playing"><div class="now-empty">${icon("music")}<p>Choisissez un titre<br/>pour commencer à écouter.</p></div></div></aside>
   </div>
   <footer class="player" aria-label="Lecteur audio">
     <div id="track-info" class="track-info"></div>
@@ -234,6 +235,13 @@ const devicePicker = new DevicePicker(
   (id) => {
     void sendConnect({ kind: "transfer", deviceId: id });
   },
+  (create) => void jamView.show(create),
+);
+const jamView = new JamView(
+  byId("jam-panel"),
+  byId("right-panel-heading"),
+  (active) => devicePicker.setJam(active),
+  showError,
 );
 const audioSettings = new AudioSettingsView(connectState, showError);
 byId("connect-banner").addEventListener("click", () =>
@@ -250,6 +258,7 @@ function showError(value: unknown): void {
     toast.hidden = true;
   }, 6500);
   if (err.code === "AUTH_REQUIRED") {
+    jamView.setReady(false);
     accountProfile = null;
     status.connected = false;
     status.nativeReady = false;
@@ -1022,6 +1031,7 @@ async function connect(interactive: boolean): Promise<void> {
       loadHome(),
       status.nativeReady ? loadLibrary() : Promise.resolve(),
     ]);
+    jamView.setReady(status.nativeReady);
   } catch (err) {
     if (interactive || (err as AppError).code !== "AUTH_REQUIRED")
       showError(err);
@@ -1087,6 +1097,7 @@ document.addEventListener("click", async (event) => {
   }
   if (id === "connect" || id === "welcome-connect") void connect(true);
   if (id === "disconnect") {
+    jamView.setReady(false);
     ++connectEpoch;
     connectState = emptyConnectState();
     audioSettings.update(connectState);
@@ -1408,6 +1419,7 @@ async function boot(): Promise<void> {
     if (status.nativeReady && event.payload.available)
       applyConnect(event.payload);
   });
+  await listen("jam-changed", () => jamView.notice());
   await connect(false);
 }
 void boot().catch(showError);

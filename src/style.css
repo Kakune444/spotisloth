@@ -808,6 +808,155 @@ input[type="range"]:disabled {
 .device-help {
   margin: 16px 8px 0;
 }
+.device-jam {
+  border-top: 1px solid #ffffff20;
+  margin-top: 16px;
+  padding: 16px 8px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.device-jam p {
+  color: #b3b3b3;
+  font-size: 12px;
+  max-width: 135px;
+}
+.device-jam .pill {
+  font-size: 12px;
+  padding: 8px 12px;
+}
+.jam-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.jam-panel-heading h2 {
+  margin: 0;
+}
+.jam-panel-heading .icon-button {
+  font-size: 25px;
+}
+#jam-panel[hidden] {
+  display: none;
+}
+#jam-panel {
+  margin-bottom: 28px;
+}
+#jam-panel h3 {
+  font-size: 23px;
+  margin: 12px 0 20px;
+}
+.jam-members {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.jam-member {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.jam-member img,
+.jam-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #535353;
+}
+.jam-avatar {
+  display: grid;
+  place-items: center;
+}
+.jam-member small {
+  display: block;
+  color: #b3b3b3;
+  font-size: 12px;
+  margin-top: 3px;
+}
+.jam-invite {
+  background: #282828;
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+}
+.jam-invite strong {
+  display: block;
+  text-align: left;
+}
+.jam-invite p,
+.jam-help {
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 12px 0 18px;
+}
+.jam-invite > p {
+  text-align: left;
+}
+.jam-invite .pill {
+  font-size: 13px;
+  padding: 9px 18px;
+}
+.jam-qr {
+  width: 152px;
+  max-width: 100%;
+  margin: 16px auto;
+  padding: 9px;
+  background: #fff;
+  border-radius: 8px;
+}
+.jam-qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.jam-invite-url {
+  width: 100%;
+  background: #121212;
+  border: 1px solid #535353;
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 11px;
+}
+.jam-invite .jam-copy-status {
+  font-size: 12px;
+  margin-bottom: 0;
+  text-align: center;
+}
+.jam-end {
+  margin-top: 20px;
+}
+.jam-error {
+  color: #ffb6bd !important;
+  margin: 12px 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.jam-end-dialog p {
+  color: #b3b3b3;
+  margin: 16px 0 24px;
+}
+.jam-danger {
+  background: #e91429;
+  color: #fff;
+}
+@media (max-width: 1200px) {
+  .jam-open .now-playing {
+    display: block;
+    position: fixed;
+    right: 8px;
+    top: 74px;
+    bottom: 100px;
+    width: min(330px, calc(100vw - 16px));
+    z-index: 11;
+    overflow-y: auto;
+    box-shadow: 0 8px 40px #000b;
+  }
+  .jam-open.remote-playback .now-playing {
+    bottom: 126px;
+  }
+}
 .device-list {
   max-height: min(400px, calc(100vh - 280px));
   overflow-y: auto;

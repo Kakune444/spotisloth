@@ -3,7 +3,7 @@ use crate::connect::{ConnectError, Result};
 use librespot_core::session::Session;
 use reqwest::{Client, Method, Url};
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
@@ -26,6 +26,8 @@ pub struct JamSession {
     pub invite_url: String,
     pub can_invite: bool,
     pub members: Vec<JamMember>,
+    #[serde(skip_serializing)]
+    invite_uri: String,
 }
 
 fn valid_id(id: &str) -> bool {
@@ -39,14 +41,18 @@ fn valid_id(id: &str) -> bool {
 fn spotify_invite(value: &str) -> Option<String> {
     let url = Url::parse(value).ok()?;
     (url.scheme() == "https"
-        && url.host_str() == Some("open.spotify.com")
+        && matches!(url.host_str(), Some("open.spotify.com" | "spotify.link"))
         && url.username().is_empty()
         && url.password().is_none()
         && url.port().is_none()
-        && url.path().starts_with("/socialsession/")
-        && url
-            .path_segments()
-            .is_some_and(|mut p| p.nth(1).is_some_and(valid_id)))
+        && if url.host_str() == Some("spotify.link") {
+            valid_id(url.path().trim_start_matches('/'))
+        } else {
+            url.path().starts_with("/socialsession/")
+                && url
+                    .path_segments()
+                    .is_some_and(|mut p| p.nth(1).is_some_and(valid_id))
+        })
     .then(|| url.to_string())
 }
 
@@ -73,9 +79,18 @@ pub fn parse_session(value: &Value) -> Result<Option<JamSession>> {
     let can_invite = value["user_capabilities"]["invite"]
         .as_bool()
         .unwrap_or(owner);
-    let invite_url =
-        spotify_invite(value["join_session_url"].as_str().unwrap_or_default()).unwrap_or_default();
-    if can_invite && invite_url.is_empty() {
+    let raw_url = value["join_session_url"].as_str().unwrap_or_default();
+    let invite_url = spotify_invite(raw_url).unwrap_or_default();
+    let invite_uri = value["join_session_uri"].as_str().unwrap_or_default();
+    let uri_token = invite_uri
+        .strip_prefix("spotify:socialsession:")
+        .filter(|token| token.len() == 22 && token.bytes().all(|b| b.is_ascii_alphanumeric()));
+    let native_link = Url::parse(raw_url).ok().is_some_and(|url| {
+        url.scheme() == "hm"
+            && url.host_str() == Some("social-connect")
+            && uri_token.is_some_and(|token| url.path() == format!("/v2/sessions/join/{token}"))
+    });
+    if can_invite && invite_url.is_empty() && !native_link {
         return Err(ConnectError::Protocol);
     }
     let entries = value["session_members"]
@@ -116,6 +131,11 @@ pub fn parse_session(value: &Value) -> Result<Option<JamSession>> {
         invite_url,
         can_invite,
         members,
+        invite_uri: if uri_token.is_some() {
+            invite_uri.into()
+        } else {
+            String::new()
+        },
     }))
 }
 
@@ -138,6 +158,7 @@ pub struct JamClient {
     client: Client,
     writes: Mutex<()>,
     cooldown: Mutex<Option<Instant>>,
+    invitation: Mutex<Option<(String, String, String)>>,
 }
 
 impl JamClient {
@@ -147,10 +168,17 @@ impl JamClient {
             client,
             writes: Mutex::new(()),
             cooldown: Mutex::new(None),
+            invitation: Mutex::new(None),
         }
     }
 
-    async fn request(&self, method: Method, path: &str, mutation: bool) -> Result<Option<Value>> {
+    async fn request(
+        &self,
+        method: Method,
+        path: &str,
+        mutation: bool,
+        body: Option<Value>,
+    ) -> Result<Option<Value>> {
         if self
             .cooldown
             .lock()
@@ -177,23 +205,24 @@ impl JamClient {
             .await
             .map_err(|_| ConnectError::Network)?;
         // current_or_new is a mutation despite its GET method. Never retry it automatically.
-        let response = self
+        let mut request = self
             .client
             .request(method, format!("{base}{path}"))
             .bearer_auth(auth.access_token)
             .header("client-token", token)
             .header("accept", "application/json")
             .header("content-type", "application/json")
-            .timeout(Duration::from_secs(15))
-            .send()
-            .await
-            .map_err(|_| {
-                if mutation {
-                    ConnectError::Uncertain
-                } else {
-                    ConnectError::Network
-                }
-            })?;
+            .timeout(Duration::from_secs(15));
+        if let Some(body) = body {
+            request = request.json(&body);
+        }
+        let response = request.send().await.map_err(|_| {
+            if mutation {
+                ConnectError::Uncertain
+            } else {
+                ConnectError::Network
+            }
+        })?;
         let status = response.status().as_u16();
         if std::env::var("SPOTISLOTH_JAM_TRACE").as_deref() == Ok("1") {
             eprintln!("JAM_HTTP: mutation={mutation} status={status}");
@@ -236,9 +265,14 @@ impl JamClient {
         }
     }
 
-    pub async fn current(&self) -> Result<Option<JamSession>> {
+    async fn read_current(&self) -> Result<Option<JamSession>> {
         match self
-            .request(Method::GET, "/social-connect/v2/sessions/current", false)
+            .request(
+                Method::GET,
+                "/social-connect/v2/sessions/current",
+                false,
+                None,
+            )
             .await?
         {
             Some(value) => parse_session(&value),
@@ -246,32 +280,76 @@ impl JamClient {
         }
     }
 
+    async fn with_invitation(&self, mut session: JamSession) -> JamSession {
+        if !session.can_invite || !session.invite_url.is_empty() {
+            return session;
+        }
+        let mut cached = self.invitation.lock().await;
+        if let Some((id, uri, url)) = cached.as_ref() {
+            if id == &session.id && uri == &session.invite_uri {
+                session.invite_url = url.clone();
+                return session;
+            }
+        }
+        let body = json!({"spotify_uri":session.invite_uri,"custom_data":[{"key":"ssp","value":"1"},{"key":"app_destination","value":"socialsession"}],"utm_parameters":{"utm_source":"share-options-sheet","utm_medium":"share-link"}});
+        if let Ok(Some(response)) = self
+            .request(
+                Method::POST,
+                "/url-dispenser/v1/generate-url",
+                true,
+                Some(body),
+            )
+            .await
+        {
+            if let Some(url) = response["shareable_url"].as_str().and_then(spotify_invite) {
+                session.invite_url = url.clone();
+                *cached = Some((session.id.clone(), session.invite_uri.clone(), url));
+            }
+        }
+        // Link-service failure must not hide the session or prevent the host from ending it.
+        session
+    }
+
+    pub async fn current(&self) -> Result<Option<JamSession>> {
+        match self.read_current().await? {
+            Some(session) => Ok(Some(self.with_invitation(session).await)),
+            None => {
+                self.invitation.lock().await.take();
+                Ok(None)
+            }
+        }
+    }
+
     pub async fn create(&self) -> Result<JamSession> {
         let _write = self.writes.lock().await;
-        if let Some(existing) = self.current().await? {
-            return Ok(existing);
+        if let Some(existing) = self.read_current().await? {
+            return Ok(self.with_invitation(existing).await);
         }
         let value = self
             .request(
                 Method::GET,
                 "/social-connect/v2/sessions/current_or_new?activate=true",
                 true,
+                None,
             )
             .await?
             .ok_or(ConnectError::Uncertain)?;
-        parse_session(&value)?.ok_or(ConnectError::Uncertain)
+        Ok(self
+            .with_invitation(parse_session(&value)?.ok_or(ConnectError::Uncertain)?)
+            .await)
     }
 
     pub async fn end(&self, expected: &str) -> Result<()> {
         let _write = self.writes.lock().await;
-        may_end(self.current().await?.as_ref(), expected)?;
+        may_end(self.read_current().await?.as_ref(), expected)?;
         self.request(
             Method::DELETE,
             &format!("/social-connect/v3/sessions/{expected}"),
             true,
+            None,
         )
         .await?;
-        if self.current().await?.is_some_and(|s| s.id == expected) {
+        if self.read_current().await?.is_some_and(|s| s.id == expected) {
             return Err(ConnectError::Uncertain);
         }
         Ok(())
@@ -297,6 +375,35 @@ mod tests {
                 && parsed.members[0].current_user
         );
         assert_eq!(parsed.owner_name, "Alice");
+    }
+    #[test]
+    fn native_join_endpoint_is_resolved_separately_from_the_share_link() {
+        let mut value = session();
+        value["join_session_uri"] = json!("spotify:socialsession:abcdefghijklmnopqrstuv");
+        value["join_session_url"] =
+            json!("hm://social-connect/v2/sessions/join/abcdefghijklmnopqrstuv");
+        let parsed = parse_session(&value).unwrap().unwrap();
+        assert!(parsed.invite_url.is_empty());
+        assert!(!parsed.invite_uri.is_empty());
+        assert!(
+            serde_json::to_value(&parsed)
+                .unwrap()
+                .get("invite_uri")
+                .is_none()
+        );
+    }
+    #[test]
+    fn mismatched_native_token_is_rejected() {
+        let mut value = session();
+        value["join_session_uri"] = json!("spotify:socialsession:abcdefghijklmnopqrstuv");
+        value["join_session_url"] = json!("hm://social-connect/v2/sessions/join/different");
+        assert!(parse_session(&value).is_err());
+    }
+    #[test]
+    fn dispenser_links_accept_only_spotify_hosts() {
+        assert!(spotify_invite("https://spotify.link/example").is_some());
+        assert!(spotify_invite("https://spotify.link.evil.test/example").is_none());
+        assert!(spotify_invite("https://spotify.link/").is_none());
     }
     #[test]
     fn inactive_session_is_absent() {

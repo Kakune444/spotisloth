@@ -200,6 +200,9 @@ async fn diagnose_connect(
     println!("CONNECT_SESSION_OK");
     if std::env::args().any(|a| a == "--connect-jam-roundtrip") {
         let result = diagnose_jam(&jam::JamClient::new(session.clone(), client), &runtime).await;
+        if let Err(reason) = &result {
+            println!("JAM_DIAGNOSTIC_FAILED: {reason}");
+        }
         runtime.shutdown();
         tokio::time::sleep(Duration::from_millis(400)).await;
         session.shutdown();
@@ -280,15 +283,15 @@ async fn diagnose_jam(
         created.members.len(),
         !created.invite_url.is_empty()
     );
-    let notified = tokio::time::timeout(Duration::from_secs(8), notices.changed())
-        .await
-        .is_ok();
-    let readback = jam
-        .current()
-        .await
-        .map_err(|e| format!("Jam verification failed: {e:?}"))?;
+    let notified = matches!(
+        tokio::time::timeout(Duration::from_secs(8), notices.changed()).await,
+        Ok(Ok(()))
+    );
+    let readback = jam.current().await;
     let matched = readback
         .as_ref()
+        .ok()
+        .and_then(|v| v.as_ref())
         .is_some_and(|s| s.id == created.id && s.owner && !s.invite_url.is_empty());
     // End only the session returned by this diagnostic; the API checks current ownership again.
     jam.end(&created.id)
